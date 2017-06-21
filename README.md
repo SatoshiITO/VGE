@@ -1,6 +1,6 @@
 # VGE
 Virtual Grid Engine
-Copyright (c) 2016 Satoshi ITO, Masaaki YADOME, and Satoru Miyano
+Copyright (c) 2017 Satoshi ITO, Masaaki YADOME, and Satoru Miyano
 
 1. General
 

@@ -1,0 +1,38 @@
+#!/bin/env python
+
+import os,time
+import argparse
+from VGE.vge_task import vge_task
+from VGE.vge_conf import *
+
+parser = argparse.ArgumentParser(description='initialize communication VGE with the target pipeline.')
+parser.add_argument('--start', action='store_true', help='establish connection VGE with the target pipeline')
+parser.add_argument('--stop',  action='store_true', help='shutdown VGE')
+args = parser.parse_args()
+
+#
+# main
+#
+if __name__ == '__main__':
+
+  default_vge_conf = ""
+  default_vge_conf = os.getcwd() + "/vge.cfg"
+  if os.path.isfile(default_vge_conf):
+      pass
+  elif "VGE_CONF" in os.environ:
+      default_vge_conf_dir = os.environ["VGE_CONF"]
+      default_vge_conf = default_vge_conf_dir + "/vge.cfg"
+      if os.path.isfile(default_vge_conf):
+         pass
+  vge_conf.read(default_vge_conf)
+  vge_conf_check()
+
+  if args.start: 
+     time.sleep(2)
+     vge_task("hello",-1,"","")
+  elif args.stop:
+     time.sleep(2)
+     vge_task("finished",-1,"","")
+
+
+
