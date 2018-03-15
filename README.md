@@ -24,5 +24,5 @@ ent softwares and versions are below:
 
 Download source archive and extract it. Then type following commands:
 
- $ cd VGE 
+ $ cd VGE<br>
  $ python setup.py install
