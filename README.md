@@ -1,6 +1,6 @@
 # VGE
 Virtual Grid Engine
-Copyright (c) 2017 Satoshi ITO, Masaaki YADOME, and Satoru Miyano
+Copyright (c) 2017 Satoshi ITO, Masaaki YADOME, and Satoru MIYANO
 
 1. General
 
@@ -17,7 +17,7 @@ communication between VGE master process and VGE jobcontroler process. Depend
 ent softwares and versions are below:
 
  - Python (2.7>=)
- - MPI4PY 2.0.0>=()
+ - MPI4PY (2.0.0>=)
  - MPICH or OpenMPI (2.0>=)
 
 3. Install
