@@ -7,9 +7,9 @@
 
 """
 
-Virtual Grid Engine (VGE) for Pipeline that runs on K computer
+Virtual Grid Engine (VGE)
 
-version 20170317d (tune-2) 
+version 2.0.0 
 
 """
 
@@ -50,7 +50,7 @@ verbose = int(get_vge_conf("vge","verbose",verbose))
 #
 # parse command-line arguments
 #
-parser = argparse.ArgumentParser(description='Virtual Grid Engine (VGE) for Pipeline version.20170317d(tune3.5)')
+parser = argparse.ArgumentParser(description='Virtual Grid Engine (VGE) for Pipeline version.2.0.0)')
 parser = argparse.ArgumentParser(epilog='Note: VGE must run under MPI and Python mpi4py. VGE should keep running in the background before Pipeline starts to run (use an ampersand symbol & in VGE execution command) in the case that both VGE and Pipeline are launched from a script or the same terminal. ex. "mpiexec -n 48 python vge &".  In order to stop VGE, use vge_connect tool with --stop as "vge_connect --stop".  VGE can read its configuration file (vge.cfg) either in the path where VGE is launched or in the directory defined in an environment variable $VGE_CONF (the former path has a first priority).')
 #
 # loadbalancer
@@ -95,7 +95,7 @@ parser.add_argument('--monitor_workerjob', action='store_true', default=False, \
 #parser.add_argument('--monitor_workerjob', action='store_true', default=False, \
 #                     help = 'enable to monitor running jobs to abort on workers')
 
-parser.add_argument('--version', action='version', version='%(prog)s 20170317d (tune-2)')
+parser.add_argument('--version', action='version', version='%(prog)s 2.0.0')
 
 #
 cl_args = parser.parse_args()
