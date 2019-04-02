@@ -1,0 +1,61 @@
+#!/bin/env python
+
+import os
+import subprocess, multiprocessing
+
+from VGE.vge_init import *
+from VGE.vge_finalize import *
+from VGE.vge_task import *
+
+#
+# create a job command , then submit it to VGE
+#
+def main(command,max_task):
+
+  #
+  basefilename="test_"+str(os.getpid())
+  vge_task(command, max_task, basefilename, "", "")
+
+  return
+
+#
+# main
+#
+if __name__ == '__main__':
+
+  # command
+  command =""
+
+  max_task=1
+
+  # initialize VGE...
+  vge_init()
+
+  command1 =""
+  command1 +="#!/bin/bash\n"
+  command1 += "echo TEST1 >& sample1.txt \n"
+
+  command2 =""
+  command2 +="#!/bin/bash\n"
+  command2 += "echo TEST2 >& sample2.txt \n"
+
+  jobs=[]
+  #
+  #
+  p=multiprocessing.Process(target=main, args=(command1, max_task))
+  jobs.append(p)
+  p.start()
+  #
+  #
+  p=multiprocessing.Process(target=main, args=(command2, max_task))
+  jobs.append(p)
+  p.start()
+
+  for p in jobs:
+      p.join()
+
+
+  # finalize VGE...
+  vge_finalize()
+
+

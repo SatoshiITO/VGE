@@ -4,13 +4,11 @@
 # *   (c) Copyright 2017-2019 Satoshi ITO, Masaaki Yadome, and Satoru MIYANO
 # */
 
-import ConfigParser
+global pipeline_parent_pid
 
-global vge_conf
-
-vge_conf = ConfigParser.SafeConfigParser()
-
-def vge_conf_check():
+def  pipeline_parent_pid_deposit(pid):
+    global pipeline_parent_pid
+    pipeline_parent_pid=pid
     pass
 
 

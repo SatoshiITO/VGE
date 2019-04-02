@@ -1,3 +1,8 @@
+#/*
+# *    Virtual Grid Engine
+# *
+# *   (c) Copyright 2017-2019 Satoshi ITO, Masaaki Yadome, and Satoru MIYANO
+# */
 from mpi4py import MPI
 import time
 
@@ -9,7 +14,7 @@ def get_target_worker(comm, nproc,  master_rank, sorted_node_list, worker_wait_l
     target_worker_rank = 0
     jj = 0
     if target_flag in worker_wait_list.values():#
-        for jj in range(nproc):
+        for jj in xrange(nproc):
             if jj != master_rank:
                   target_worker_rank = sorted_node_list[jj][0]
                   if worker_wait_list[target_worker_rank] is target_flag:

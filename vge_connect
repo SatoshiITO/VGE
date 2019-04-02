@@ -1,38 +1,584 @@
 #!/bin/env python
+#/*
+# *    Virtual Grid Engine
+# *
+# *   (c) Copyright 2017-2019 Satoshi ITO, Masaaki Yadome, and Satoru MIYANO
+# */
 
-import os,time
+"""
+
+vge_connect is:
+
+a connection and communication tool for Virtual Grid Engine (VGE)
+
+version 20170317d
+
+"""
+
+import os,signal,time
 import argparse
 from VGE.vge_task import vge_task
 from VGE.vge_conf import *
+from VGE.get_vge_conf import get_vge_conf
+from VGE.get_process_list import *
+from VGE.get_process_name import *
+from VGE.check_pipeline_parent_pid_list import check_pipeline_parent_pid_list
+from VGE.check_process_status import check_process_status
 
-parser = argparse.ArgumentParser(description='initialize communication VGE with the target pipeline.')
-parser.add_argument('--start', action='store_true', help='establish connection VGE with the target pipeline')
-parser.add_argument('--stop',  action='store_true', help='shutdown VGE')
+#
+# set a current dir
+#
+current_dir=os.getcwd()
+home_dir = os.environ["HOME"] # $HOME
+
+#
+# read and parse VGE config file
+#
+flag_vge_conf=False
+default_vge_conf_dir = current_dir
+default_vge_conf = default_vge_conf_dir + "/vge.cfg"
+if os.path.isfile(default_vge_conf):
+    flag_vge_conf=True
+elif "VGE_CONF" in os.environ:
+    default_vge_conf_dir = os.environ["VGE_CONF"]
+    default_vge_conf = default_vge_conf_dir + "/vge.cfg"
+    if os.path.isfile(default_vge_conf):
+       flag_vge_conf=True
+vge_conf.read(default_vge_conf)
+vge_conf_check()
+verbose = 0
+verbose = int(get_vge_conf("vge_connect","verbose",verbose))
+
+#
+# parse command-line arguments
+#
+parser = argparse.ArgumentParser(description='a control tool to shutdown VGE or to wait for Pipeline to finish')
+
+# start mode
+parser.add_argument('--start', action='store_true', help='[start mode] wait for VGE to wake up')
+#
+parser.add_argument('--wait', action='store_true', help='[wait mode] wait for all Pipeline processes to finish')
+parser.add_argument('--sleep', action='store', nargs='?', const=0, default=0, type=int, \
+                     choices=None, metavar=None, help = '[wait mode only] set a sleep time [sec] before perform monitoring loop. default:0 (unlimit)')
+parser.add_argument('--wait_maxtime', action='store', nargs='?', const=0, default=0, type=int, \
+                     choices=None, metavar=None, help = '[wait mode only] set a maximum elapsed time [sec] for wait mode. default:0 (unlimit)')
+parser.add_argument('--monitor', action='store', nargs='?', const='pipeline', default='pipeline', type=str, \
+                     choices=None, metavar=None, help = '[wait mode only] set a target process name to be monitored. default:pipeline')
+
+
+parser.add_argument('--stop', action='store_true', help='[stop mode] shutdown VGE and/or stop Pipeline process(es)')
+
+parser.add_argument('--force', action='store_true', help='[stop mode only] forced to shutdown VGE')
+parser.add_argument('--target', action='store', nargs='?', const='pipeline', default='pipeline', type=str, \
+                     choices=None, metavar=None, help = '[stop mode only] set a target process name to be killed if alive. default:pipeline')
+parser.add_argument('--stop_maxtime', action='store', nargs='?', const=600, default=600, type=int, \
+                     choices=None, metavar=None, help = '[stop mode only] set a maximum elapsed time [sec] for waiting VGE process to be gone. default:600')
+#
+#parser.add_argument('--machine', action='store', nargs='?', const='kei', default='kei', type=str, \
+#                     choices=['linux','kei'], metavar=None, \
+#                     help = 'select a machine type "linux" for generic linux or "kei" for K-computer where vge/vge_connect runs')
+#
 args = parser.parse_args()
+#
+
+#print "check parser.parse_args()", args
+#
+machine_type="kei"
+#machine_type=args.machine
+#
+
+#
+# logger setting 
+#
+#verbose=3
+verbose = int(get_vge_conf("vge_connect","verbose",verbose))
+from logging import getLogger,StreamHandler,basicConfig,DEBUG,INFO,WARNING,ERROR,CRITICAL
+logger=getLogger(__name__)
+if verbose == 0:
+   logger.setLevel(CRITICAL)
+elif verbose == 1:
+   logger.setLevel(INFO)
+elif verbose == 3:
+   logger.setLevel(DEBUG)
+basicConfig(format='%(asctime)s:%(levelname)s:%(message)s')
+
+#
+#
+#
+#
 
 #
 # main
 #
 if __name__ == '__main__':
 
-  default_vge_conf = ""
-  default_vge_conf = os.getcwd() + "/vge.cfg"
-  if os.path.isfile(default_vge_conf):
-      pass
-  elif "VGE_CONF" in os.environ:
-      default_vge_conf_dir = os.environ["VGE_CONF"]
-      default_vge_conf = default_vge_conf_dir + "/vge.cfg"
-      if os.path.isfile(default_vge_conf):
-         pass
-  vge_conf.read(default_vge_conf)
-  vge_conf_check()
+  elapsed_time=time.time()
 
+  #
+  # get a parent pid for a main process
+  #
+  process_id = os.getpid()
+  from VGE.pipeline_parent_pid import *
+  parent_pid = os.getpid()
+  pipeline_parent_pid_deposit(parent_pid)
+
+  #
+  #
+  #
+  logger.info("VGE(CONNECT) pid[%i]: ---------------------------------------------------" %process_id)
+  logger.info("VGE(CONNECT) pid[%i]:  VGE_CONNECT starts...." %(process_id))
+  logger.info("VGE(CONNECT) pid[%i]: ---------------------------------------------------" %process_id)
+  #
+  #
+  my_process_name = "vge_connect"
+  current_process_name = get_process_name(process_id)
+  #
+  logger.info("VGE(CONNECT) pid[%i]: current process name [%s] " %(process_id, current_process_name))
+  logger.debug("VGE(CONNECT) pid[%i]: check pid  [%i]..." %(process_id,process_id))
+  logger.debug("VGE(CONNECT) pid[%i]: check ppid [%i] ..." %(process_id,os.getppid()))
+  #
+  
+  #
+  # start (wait for VGE to wake up)
+  #
   if args.start: 
+     #
+     #
+     logger.info("VGE(CONNECT) pid[%i]: [start mode] " %(process_id))
+     logger.info("VGE(CONNECT) pid[%i]: waiting for Pipeline process to wake up... " %(process_id))
+     #
+     #
      time.sleep(2)
-     vge_task("hello",-1,"","")
-  elif args.stop:
-     time.sleep(2)
-     vge_task("finished",-1,"","")
+     vge_task("hello",-1,"","","response")
 
+  #
+  # stop
+  #
+  elif args.stop:
+
+     #
+     logger.info("VGE(CONNECT) pid[%i]: [stop mode] " %(process_id))
+     logger.info("VGE(CONNECT) pid[%i]: stop VGE and Pipeline... " %(process_id))
+     #
+     interval_checkvgefinish=30.0 # sec
+     interval_checkvgefinish=float(get_vge_conf("vge_connect","connect_interval_checkvgefinish",interval_checkvgefinish))
+     logger.info("VGE(CONNECT) pid[%i]: sleep time after checked VGE process [connect_interval_checkvgefinish] [%0.3f sec] " %(process_id,interval_checkvgefinish))
+     #
+     flag_forcedstop=False
+     flag_forcedstop=args.force
+     #
+     # check current queued job in VGE
+     #
+     num_of_restjob=""
+     num_of_restjob=vge_task("restofjob",-1,"","","response")
+     num_of_restjob=str(num_of_restjob)
+     if num_of_restjob.isdigit():
+        num_of_restjob=int(num_of_restjob)
+     else:
+        num_of_restjob=0
+     logger.info("VGE(CONNECT) pid[%i]: num of current queued jobs in VGE [%i] " %(process_id,num_of_restjob))
+     #
+     if num_of_restjob > 0:
+        logger.info("VGE(CONNECT) pid[%i]: VGE still has queued jobs [%i] but now it is time to end." %(process_id,num_of_restjob))
+        logger.info("VGE(CONNECT) pid[%i]: VGE will be forced to stop ..." %(process_id))
+        flag_forcedstop=True
+
+     #
+     # maximum time for stop mode [sec]
+     #
+     max_stoptime = -1 # not considered (unlimit)
+     max_stoptime = args.stop_maxtime
+     #
+     if  max_stoptime > 0 :
+        logger.info("VGE(CONNECT) pid[%i]: maximum elasped time on stop mode [%i sec] " %(process_id,max_stoptime))
+     else: 
+        logger.info("VGE(CONNECT) pid[%i]: maximum time was not set on stop mode (unlimit). [%i sec] " %(process_id,max_stoptime))
+      
+     # 
+     # kill target Pipeline process(es) if they alive before VGE_CONNECT finishes.
+     # 
+     target_process=args.target
+     process_list=(get_process_list(machine_type)).split("\n")
+     logger.debug("VGE(CONNECT) pid[%i]: check process_list ... [%s] " %(process_id, process_list))
+     target_kill_list=[]
+     flag_found_target=False
+     #
+     #
+     for process in process_list:
+        #if not my_process_name in process: 
+        if target_process in process: 
+           templist = process.split(" ")
+           found_target_process=False
+           for temp in templist:
+              if target_process == os.path.basename(temp):
+                 if not my_process_name in process:
+                    found_target_process=True
+                    flag_found_target=True
+                    logger.debug("VGE(CONNECT) pid[%i]: found ....[%s] [%s] [%s] " %(process_id,target_process,os.path.basename(temp),process))
+                    break
+           #
+           if found_target_process:
+              #
+              target_pid = -1
+              if templist[0].isdigit():
+                 target_pid =int(templist[0])
+              elif templist[1].isdigit():
+                 target_pid =int(templist[1])
+              elif templist[2].isdigit():
+                 target_pid =int(templist[2])
+              elif templist[3].isdigit():
+                 target_pid =int(templist[3])
+              elif templist[4].isdigit():
+                 target_pid =int(templist[4])
+              elif templist[5].isdigit():
+                 target_pid =int(templist[5])
+              #
+              if target_pid > 0: 
+                 if check_process_status(target_pid):
+                    target_kill_list.append(target_pid)
+                    logger.debug("VGE(CONNECT) pid[%i]: target pid to be killed [%i]: [%s] " %(process_id, target_pid, process))
+              else:
+                 logger.warning("VGE(CONNECT) pid[%i]: could not get a process id. [%s] " %(process_id, templist))
+     #
+     #
+     if not flag_found_target:
+        logger.info("VGE(CONNECT) pid[%i]: the target process name [%s] was not found in the current running processes. " %(process_id, target_process))
+     #
+     #
+     num_of_target_kill_list = len(target_kill_list)
+     #
+     if num_of_target_kill_list > 0:
+        logger.info("VGE(CONNECT) pid[%i]: target process(es) [%s] with name[%s] were found so try to kill them... " %(process_id, num_of_target_kill_list,target_process))
+        #
+        for pid in target_kill_list:
+            if check_process_status(pid): 
+               command = "kill -9 %i" %pid
+               os.system(command)
+            else:
+               logger.debug("VGE(CONNECT) pid[%i]: not found target pid[%i]. " %(process_id, pid))
+               target_kill_list.remove(pid)
+        # 
+        for pid in target_kill_list:
+            if check_process_status(pid): 
+               logger.info("VGE(CONNECT) pid[%i]: target pid[%i] is still alive. try to kill it again.... " %(process_id, pid))
+               command = "kill -9 %i" %pid #
+               os.system(command)
+               time.sleep(0.01) # 10msec wait
+               if not check_process_status(pid): 
+                  logger.info("VGE(CONNECT) pid[%i]: ....succeeded. target pid[%i] was gone. " %(process_id, pid))
+               else :
+                  logger.warning("VGE(CONNECT) pid[%i]: ....failed. target pid[%i] is not killed. " %(process_id, pid))
+                  target_kill_list.remove(pid)
+
+     #
+     if num_of_target_kill_list > 0:
+        logger.info("VGE(CONNECT) pid[%i]: killed target process pids ... %s " %(process_id, target_kill_list))
+
+     #
+     # send a stop signal to VGE
+     #
+     logger.info("VGE(CONNECT) pid[%i]: shutdown VGE..." %(process_id))
+     if flag_forcedstop:
+         #
+         logger.info("VGE(CONNECT) pid[%i]: send a forced stop signal to VGE" %(process_id))
+         vge_task("forcedstop",-1,"","","response")
+         #
+
+     else:
+         #
+         logger.info("VGE(CONNECT) pid[%i]: send a stop signal to VGE" %(process_id))
+         vge_task("finished",-1,"","","response")
+         #
+
+
+     # 
+     # wait for VGE to finish
+     #
+
+     #
+     target_process="vge"
+     #
+     pcount=0
+     logger.info("VGE(CONNECT) pid[%i]: wait for VGE to finish... [target=%s]" %(process_id, target_process))
+     found_target=False
+     #
+     #
+     flag_wait=True
+     process_list=[]
+     wait_count=0
+     init_time=time.time()
+     while flag_wait:
+        found_target=False
+        process_list=(get_process_list(machine_type)).split("\n")
+        for process in process_list:
+
+           #if not my_process_name in process: 
+           if target_process in process: 
+              templist = process.split(" ")
+              found_vge=False
+              for temp in templist:
+                  if target_process == os.path.basename(temp):
+                     if not my_process_name in process: 
+                        found_vge=True
+                        logger.debug("VGE(CONNECT) pid[%i]: found ....[%s] [%s] [%s] " %(process_id,target_process,os.path.basename(temp),process))
+                        break
+              del templist
+              #if target_process in process:
+              if found_vge:
+                  logger.debug("VGE(CONNECT) pid[%i]: VGE is still running ... [%s] " %(process_id, process))
+                  found_target=True
+                  pcount +=1
+                  temp_time = time.time() - init_time
+                  if max_stoptime > 0: 
+                     if temp_time > max_stoptime:
+                        logger.info("VGE(CONNECT) pid[%i]: max time for waiting for vge to finish was exceeded..." %(process_id))
+                        logger.info("VGE(CONNECT) pid[%i]: try to kill vge process... [%s] " %(process_id,process))
+                        #
+                        temp = process.split(" ")
+                        #
+                        target_process_id = -1
+                        for ii in range(len(temp)):
+                          if temp[ii].isdigit():
+                             if check_process_status(int(temp[ii])):
+                                target_process_id = int(temp[ii])
+                                break # exit this loop
+                        #
+                        #
+                        if target_process_id > 0:
+                           try:
+                              #os.kill(target_process_id, signal.SIGTERM) #
+                              os.kill(target_process_id, signal.SIGKILL) #
+                              time.sleep(0.001) # 1msec wait
+                              logger.info("VGE(CONNECT) pid[%i]: .... process [%i] was gone." %(process_id,target_process_id))
+                           except Exception, error:
+                              logger.error("VGE(CONNECT) pid[%i]: os.kill error was occured. " %(process_id))
+                        else:
+                           logger.error("VGE(CONNECT) pid[%i]: not identified the process id to be killed" %(process_id))
+                  
+           else:
+               pass # found my process, vge_connect...
+        #
+        if found_target:
+           time.sleep(interval_checkvgefinish)
+           wait_count +=1
+           pass
+        else:
+           flag_wait=False # vge process(es) were gone.
+           break
+        
+     #
+     logger.info("VGE(CONNECT) pid[%i]: ... VGE has been finished. [count=%i]" %(process_id, wait_count))
+     logger.info("VGE(CONNECT) pid[%i]: VGE_CONNECT will finish..." %(process_id))
+     #
+
+  #
+  # wait 
+  #
+  elif args.wait:
+
+     #
+     target_process=args.monitor
+     #
+     logger.info("VGE(CONNECT) pid[%i]: [waiting mode] " %(process_id))
+     logger.info("VGE(CONNECT) pid[%i]: waiting and monitoring Pipeline process .... " %(process_id))
+     logger.info("VGE(CONNECT) pid[%i]: monitor process name [%s] " %(process_id, target_process))
+
+     #
+     # maximum time for wating mode [sec]
+     #
+     max_waittime = -1 # not considered (unlimit)
+     max_waittime = args.wait_maxtime
+     #
+     if  max_waittime > 0 :
+        logger.info("VGE(CONNECT) pid[%i]: maximum elasped time on waiting mode [%i sec] " %(process_id,max_waittime))
+     else: 
+        logger.info("VGE(CONNECT) pid[%i]: maximum time was not set on waiting mode (unlimit). [%i sec] " %(process_id,max_waittime))
+     #
+
+     #
+     # sleep setting before monitoring loop runs
+     #
+     interval_beforecheck=60 # sec
+     interval_beforecheck=int(args.sleep)
+     if interval_beforecheck > max_waittime and max_waittime > 0: 
+        logger.warning("VGE(CONNECT) pid[%i]: sleep time_before check [--sleep TIME] [%i sec] set to 0 due to larger than maxtime [%i sec] " %(process_id,interval_beforecheck,max_waittime))
+        #
+        interval_beforecheck=0 # changed
+        #
+     else:
+        logger.info("VGE(CONNECT) pid[%i]: sleep time before check loop [--sleep TIME] [%i sec] " %(process_id,interval_beforecheck))
+
+     #
+     # interval setting for process check 
+     #
+     interval_processcheck=10.0 # sec
+     interval_processcheck=float(get_vge_conf("vge_connect","connect_interval_processcheck",interval_processcheck))
+     if interval_processcheck > max_waittime and max_waittime > 0:
+        logger.warning("VGE(CONNECT) pid[%i]: connect_interval_processcheck [%0.3f] is set to be maxtime due to larger value than maxtime [%i sec] " %(process_id,interval_beforecheck,max_waittime))
+        interval_processcheck=max_waittime
+     else:
+        logger.info("VGE(CONNECT) pid[%i]: sleep time after checked process status [connect_interval_processcheck] [%0.3f sec] " %(process_id, interval_processcheck))
+
+     #
+     # interval setting for Pipeline status from VGE 
+     #
+     interval_vgerequest=30.0 # sec
+     interval_vgerequest = float(get_vge_conf("vge_connect","connect_interval_vgerequest",interval_vgerequest))
+     if interval_vgerequest > max_waittime and max_waittime > 0:
+        logger.warning("VGE(CONNECT) pid[%i]: connect_interval_vgerequest [%0.3f] is set to be maxtime due to larger value than maxtime [%i sec] " %(process_id,interval_vgerequest,max_waittime))
+        interval_vgerequest = max_waittime
+     else:
+        logger.info("VGE(CONNECT) pid[%i]: time interval for Pipeline status from VGE [connect_interval_vgerequest] [%0.3f sec] " %(process_id,interval_vgerequest))
+
+     #
+     elapsed_time_vge_request=time.time()
+     #
+
+     #
+     pipeline_parent_pid_list = {}
+     #
+
+     #
+     icount=0
+     logger.debug("VGE(CONNECT) pid[%i]: check ...pipeline_parent_pid_list [%s] [%i]" %(process_id, pipeline_parent_pid_list, icount))
+     #
+     #
+     #
+     flag_wait=True
+     flag_goahead=False
+     check_single_mode=False
+
+    
+     #
+     # waiting process....
+     #
+     elapsed_time_wait=time.time()
+
+     #
+     # sleep for a while before check
+     #
+     logger.info("VGE(CONNECT) pid[%i]: sleep for a while [%i sec] ... " %(process_id,interval_beforecheck))
+     time.sleep(interval_beforecheck)
+     logger.info("VGE(CONNECT) pid[%i]: ...wake up from sleep" %(process_id))
+
+     #
+     # wait loop
+     #
+     logger.info("VGE(CONNECT) pid[%i]: check for Pipeline process(es) [target=%s]" %(process_id, target_process))
+     while flag_wait:
+
+        #
+        # check elapsed time for waiting loop
+        #
+        if max_waittime > 0 :
+           temp = time.time() -  elapsed_time_wait
+           if temp > max_waittime:
+              logger.info("VGE(CONNECT) pid[%i]: elapsed time on wait mode [%0.3f sec] was exceeded for maximum time [%i sec]." %(process_id,temp,max_waittime))
+              logger.info("VGE(CONNECT) pid[%i]: ...terminate VGE_CONNECT " %(process_id))
+              flag_wait=False
+              break
+                 
+        #
+        # whether target process(es) are alive or not on the master node by using "ps" command
+        #
+        process_list=(get_process_list(machine_type)).split("\n")
+        #
+        #
+        found_target=False
+        pcount=0
+        for process in process_list:
+            if target_process in process:
+               templist = process.split(" ")
+               for temp in templist:
+                  if target_process == os.path.basename(temp):
+                     if not my_process_name in process: 
+                         logger.debug("VGE(CONNECT) pid[%i]: found a target process [%s] " %(process_id, process))
+                         found_target=True
+                         pcount +=1
+                         break # exit the inner loop
+                     else:
+                         pass # like vge_connect --monitor pipeline ....?
+
+        #
+        if found_target > 0:
+           logger.debug("VGE(CONNECT) pid[%i]: found target process(es) [%s] " %(process_id, pcount))
+
+
+        #
+        # get a current Pipeline process status from VGE
+        #
+        temp_time = time.time() - elapsed_time_vge_request
+        if  temp_time > interval_vgerequest:
+            pipeline_parent_pid_list = vge_task("pipeline_ppid_list",-1,"","","response")
+            logger.debug("VGE(CONNECT) pid[%i]: current Pipeline parent pid list [%s] [%i]" %(process_id, pipeline_parent_pid_list, icount))
+            elapsed_time_vge_request = time.time()
+           
+        #
+        # check 
+        # 
+        if not found_target:
+           # 
+           # no Pipeline is found in current processes.
+           #
+           logger.info("VGE(CONNECT) pid[%i]: Pipeline process was not found." %(process_id))
+           flag_goahead=True
+           #
+           # check final Pipeline process list from VGE
+           #
+           pipeline_parent_pid_list = vge_task("pipeline_ppid_list",-1,"","","response")
+           #print "pipeline_parent_pid_list...",pipeline_parent_pid_list
+
+           flag_goahead,check_single_mode=check_pipeline_parent_pid_list(process_id,pipeline_parent_pid_list,icount)
+
+           #
+           # judgement...
+           #
+           if flag_goahead:
+              if check_single_mode:
+                 logger.info("VGE(CONNECT) pid[%i]: all Pipeline processes recorded in VGE were completed [single-sample mode]." %(process_id))
+              else:
+                 logger.info("VGE(CONNECT) pid[%i]: all Pipeline processes recorded in VGE were completed." %(process_id))
+           else:
+              if check_single_mode:
+                 logger.info("VGE(CONNECT) pid[%i]: VGE didn't recieve a final signal from some Pipeline(s) [single-sample mode] " %(process_id))
+              else:
+                 logger.info("VGE(CONNECT) pid[%i]: VGE didn't recieve a final signal from some Pipeline(s) " %(process_id))
+              #
+              #
+              logger.info("VGE(CONNECT) pid[%i]: so some Pipeline processes may be aborted." %(process_id))
+              #
+              #
+           #
+           logger.info("VGE(CONNECT) pid[%i]: VGE_CONNECT waiting process is going to terminate..." %(process_id))
+           flag_wait=False
+           break
+           #
+        
+        else: 
+           #
+           # Pipeline(s) are still running...
+           #
+           if flag_goahead :
+              logger.info("VGE(CONNECT) pid[%i]: Pipeline in process list of VGE are compeleted but Pipeline(s) are still running. try to communicate to VGE again." %(process_id))
+           else:
+              logger.info("VGE(CONNECT) pid[%i]: Pipeline process(es) are still running. [process count=%i]" %(process_id,pcount))
+           #
+           # sleep for a while...
+           #
+           time.sleep(interval_processcheck)
+           icount += 1
+           #
+           #
+           #
+  #
+  #
+  #
+  elapsed_time=time.time() - elapsed_time
+  logger.info("VGE(CONNECT) pid[%i]: elapsed time [%0.2f sec] " %(process_id, elapsed_time))
+  #
+  #
+  #
+ 
+ 
 
 

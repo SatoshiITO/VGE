@@ -1,9 +1,15 @@
-#!/usr/bin/env python
+#!/bin/env python
+#/*
+# *    Virtual Grid Engine
+# *
+# *   (c) Copyright 2017-2019 Satoshi ITO, Masaaki Yadome, and Satoru MIYANO
+# */
+
 """
 
-Virtual Grid Engine (VGE) for running bioinformatics pipelines on MPI-base supercomputers
+Virtual Grid Engine (VGE) for Pipeline that runs on K computer
 
-version 1.0
+version 20170317d (tune-2) 
 
 """
 
@@ -41,25 +47,59 @@ vge_conf_check()
 verbose = 0
 verbose = int(get_vge_conf("vge","verbose",verbose))
 
+#
 # parse command-line arguments
 #
-parser = argparse.ArgumentParser(description='Virtual Grid Engine (VGE) for GenomonPipeline version.20160930')
-parser = argparse.ArgumentParser(epilog='Note: VGE must run under MPI and Python mpi4py. VGE should keep running in the background before GenomonPipeline starts to run (use an ampersand symbol & in VGE execution command) in the case that both VGE and GenomonPipeline are launched from a script or the same terminal. ex. "mpiexec -n 48 python vge &".  In order to stop VGE, use connect.py with --stop as "connect.py --stop".  VGE can read its configuration file (vge.cfg) either in the path where VGE is launched or in the directory defined in an environment variable $VGE_CONF (the former path has a first priority).')
+parser = argparse.ArgumentParser(description='Virtual Grid Engine (VGE) for Pipeline version.20170317d(tune3.5)')
+parser = argparse.ArgumentParser(epilog='Note: VGE must run under MPI and Python mpi4py. VGE should keep running in the background before Pipeline starts to run (use an ampersand symbol & in VGE execution command) in the case that both VGE and Pipeline are launched from a script or the same terminal. ex. "mpiexec -n 48 python vge &".  In order to stop VGE, use vge_connect tool with --stop as "vge_connect --stop".  VGE can read its configuration file (vge.cfg) either in the path where VGE is launched or in the directory defined in an environment variable $VGE_CONF (the former path has a first priority).')
 #
+# loadbalancer
 parser.add_argument('--loadbalancer', action='store', nargs='?', const='time', default='off', type=str, \
-                     choices=['time','count','off'], metavar=None, \
-                     help = 'set a load balancer mode for MPI workers. <value> "time": balanced by work time (default). <value> "count": balanced by job count. \
-                             "--loadbalancer" is the same action for "--loadbalancer time". <value> "off" explicitly turns off the balancer.')
+                     choices=['off'], metavar=None, \
+                     help = argparse.SUPPRESS)
+#                     choices=['time','count','off'], metavar=None, \
+#                     help = 'set a load balancer mode for MPI workers. <value> "time": balanced by work time (default). <value> "count": balanced by job count. \
+#                             "--loadbalancer" is the same action for "--loadbalancer time". <value> "off" explicitly turns off the balancer.')
+
+# multi-sampling
+parser.add_argument('--schedule', action='store', nargs='?', const='first', default='first', type=str, \
+                     choices=['first'], metavar=None, \
+                     help = argparse.SUPPRESS)
+#                     choices=['first','sample','arrayjob',"mix"], metavar=None, \
+#                     help = 'set a job scheduler mode. <value> "first": first come, first served (default). <value> "sample": jobs scheduled by sample chunk. \
+#                             <value> "arrayjob": jobs scheduled by array-job chunk. <value> "mix": scheduled by mix of sample and arrayjob modes.')
+
+#parser.add_argument('--sample', action='store', nargs='?', const='multi', default='multi', type=str, \
+#                     choices=['multi','single'], metavar=None, \
+#                     help = 'set a sampling mode. <value> "multi": multi-sample run (multiple Pipelines) (default). <value> "single": single-sample run.')
+
+# write csv
 parser.add_argument('--nowrite_jobscript', action='store_true', default=False, \
                      help = 'do not write any job script or output file.')
 parser.add_argument('--nowrite_vgecsv', action='store_true', default=False, \
                      help = 'do not write CSV-formatted files in which job status results are listed.')
+
+# output dir
 parser.add_argument('-o','--output_dir', action='store', nargs='?', const=default_output_dir, default=default_output_dir, type=str, choices=None, metavar=None, \
                      help = 'set a directory where script,output and CSV result files are stored. [default:%s]' %default_output_dir)
-parser.add_argument('--clean', action='store_true', default=False, help = 'clean previous VGE process(es)')
+
+# clean 
+#parser.add_argument('--clean', action='store_true', default=False, help = 'clean previous VGE process(es)')
+
+# probe MPI workers
 parser.add_argument('--check_mpi_probe', action='store_true', default=False, help = "check MPI probe")
+
+# monitoring jobs on workers
+parser.add_argument('--monitor_workerjob', action='store_true', default=False, \
+                     help = argparse.SUPPRESS)
+#parser.add_argument('--monitor_workerjob', action='store_true', default=False, \
+#                     help = 'enable to monitor running jobs to abort on workers')
+
+parser.add_argument('--version', action='version', version='%(prog)s 20170317d (tune-2)')
+
 #
 cl_args = parser.parse_args()
+#print cl_args
 
 #
 #
@@ -70,7 +110,7 @@ import sys,signal
 import datetime, commands
 import time  
 #
-from VGE.genomon_jobcontroll import *
+from VGE.pipeline_jobcontroll import *
 from VGE.mpi_jobcontroll_master import *
 from VGE.mpi_jobcontroll_worker import *
 
@@ -86,7 +126,7 @@ proc_name = MPI.Get_processor_name()
 #
 #
 master_rank = 0                     # master(vge runs) : 0
-genomon_pipeline_rank = master_rank # GenomonPiepline  : 0, same as the master rank, so far.
+pipeline_rank = master_rank # Piepline  : 0, same as the master rank, so far.
 worker_rank_ini=master_rank+1       # workers          : 1 to (nproc-1)
 worker_rank_fin=nproc-1             # 
 
@@ -117,7 +157,10 @@ if nproc == 1:
    logger.error("VGE: MPI nproc must be more than 2. (nproc=%i)" %nproc)
    logger.error("VGE: VGE has been aborted.")
    logger.error("")
-   exit()
+   #
+   MPI.Finalize()
+   #
+   exit(1)
 
 # 
 # get process id for all nodes
@@ -129,30 +172,31 @@ vgepid_list = comm.gather(mypid, root=master_rank)
 #
 # clean vge process(es) still running to avoid multiple runs
 #
-if cl_args.clean:
- logger.info("VGE: clean process....")
- if myrank == master_rank:
-   myname=(os.path.basename(__file__)).split(".")[0]
-   process_list =[]
-   process_list=commands.getoutput(  \
-        "ps -ef|grep '%s'|grep -v grep|grep -v vi|grep -v mpiexec |grep -v mpirun|grep -v mpiexec.hydra" %myname)
-        # except for grep /vi / mpiexec/ mpirun/ mpihydra
-   lists=process_list.split("\n")
-   #print lists
-   kill_pid_list = []
-   if len(lists) > 0:
-       for line in lists:
-           pid = line.split()
-           #print pid
-           if not int(pid[1]) in vgepid_list:
-                kill_pid_list.append(pid[1])
-       # kill process(es)
-       if len(kill_pid_list):
-           output = "clean vge process..."
-           for pid in kill_pid_list:
-              os.kill(int(pid), signal.SIGTERM) 
-              output += "."
-           logger.debug(output)
+#if cl_args.clean:
+# logger.info("VGE: clean process....")
+# if myrank == master_rank:
+#   myname=(os.path.basename(__file__)).split(".")[0]
+#   process_list =[]
+#   process_list=commands.getoutput(  \
+#        "ps -ef|grep '%s'|grep -v grep|grep -v vi|grep -v mpiexec |grep -v mpirun|grep -v mpiexec.hydra|grep vge_connect" %myname)
+#        # except for grep /vi / mpiexec/ mpirun/ mpihydra
+#   lists=process_list.split("\n")
+#   #print lists
+#   kill_pid_list = []
+#   if len(lists) > 0:
+#       for line in lists:
+#           pid = line.split()
+#           #print pid
+#           if not int(pid[1]) in vgepid_list:
+#              if int(pid[1]) is not mypid:
+#                  kill_pid_list.append(pid[1])
+#       # kill process(es)
+#       if len(kill_pid_list):
+#           output = "clean vge process..."
+#           for pid in kill_pid_list:
+#              os.kill(int(pid), signal.SIGTERM) 
+#              output += "."
+#           logger.debug(output)
 
 #
 # VGE environment 
@@ -243,13 +287,14 @@ if __name__ == '__main__':
         logger.info("VGE: MPI master rank [%i] --> processor name[%s]" %(myrank, proc_name))
 
         #
-        # create shared dicts to communicate between VGE-mpi and VGE-genomon job controllers
+        # create shared dicts to communicate between VGE-mpi and VGE-pipeline job controllers
         #
         manager=multiprocessing.Manager()
         total_joblist=manager.dict()
         command_list=manager.dict()
         new_joblist=manager.dict()
         task_check=manager.dict()
+        pipeline_parent_pid_list=manager.dict()
 
         #
         # make VGE result filenames
@@ -261,46 +306,54 @@ if __name__ == '__main__':
         #
         #make a multiprocessing process
         #
-        genomon_jobcontroll_process = multiprocessing.Process(target=genomon_jobcontroll, \
-                 args=(cl_args,job_args, total_joblist, new_joblist, task_check, command_list,))
+        pipeline_jobcontroll_process = multiprocessing.Process(target=pipeline_jobcontroll,    \
+                            args=(cl_args,job_args, total_joblist, new_joblist, task_check,  \
+                                  pipeline_parent_pid_list,command_list,))
 
         #
-        # start GenomonPipeline job controller 
+        # start Pipeline job controller 
         #
-        genomon_jobcontroll_process.start()
+        pipeline_jobcontroll_process.start()
 
         #
         # start mpi master process
         #
-        mpi_jobcontroll_master(cl_args, mpi_master_args, comm, total_joblist,new_joblist,task_check, command_list)
+        mpi_jobcontroll_master(cl_args, mpi_master_args, comm, total_joblist,new_joblist,task_check, \
+                               pipeline_parent_pid_list, command_list)
 
         #
-        # stop genomon_jobcontroll process
+        # stop pipeline_jobcontroll process
         #
-        genomon_jobcontroll_process.join()
+        pipeline_jobcontroll_process.join()
 
         elapsed_time = time.time() - elapsed_time
-        logger.info("VGE: MPI master: elapsed time: %12.3f sec" %elapsed_time)
+        logger.info("VGE: MPI master: elapsed time: %0.3f sec" %elapsed_time)
  
         #
 
     #
     # MPI worker nodes
     #
-    elif myrank != master_rank and myrank != genomon_pipeline_rank:
-        # execute worker processes
+    elif myrank != master_rank and myrank != pipeline_rank:
+        #
+        #
+        #
         logger.info("VGE: MPI worker rank [%i] --> processor name [%s]" %(myrank, proc_name))
         mpi_jobcontroll_worker(cl_args, mpi_worker_args, comm)
+
     #
     # rest of MPI workers
     #
     else:
         pass
 
+    #
+    # finalize VGE...
+    #
     comm.barrier()
     if myrank == master_rank:
        total_elapsed_time = time.time() - total_elapsed_time
-       logger.info("VGE: total elapsed time: %12.3f sec" %total_elapsed_time)
+       logger.info("VGE: total elapsed time: %0.3f sec" %total_elapsed_time)
        logger.info("VGE: ---------------------------------------------------")
        logger.info("VGE: VGE completed normally.")
        logger.info("VGE: ---------------------------------------------------")
@@ -309,5 +362,16 @@ if __name__ == '__main__':
        import time
        time.sleep(2)
        del manager
-
+    #
+    #
+    #
+    comm.barrier()
+    if myrank == master_rank:
+       MPI.Finalize()
+       os._exit(0)
+    else:
+       MPI.Finalize()
+    #
+    #
+    #
 

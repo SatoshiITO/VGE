@@ -1,3 +1,8 @@
+#/*
+# *    Virtual Grid Engine
+# *
+# *   (c) Copyright 2017-2019 Satoshi ITO, Masaaki Yadome, and Satoru MIYANO
+# */
 import random,time
 
 def make_vge_jobstatuslist():
@@ -5,6 +10,9 @@ def make_vge_jobstatuslist():
 
     #
     job={}
+
+    # ordered id for executed job 
+    job["execjobid"]=None
 
     # flag for send to a work 
     # flag will be changed to True if VGE already send a job to a woker
