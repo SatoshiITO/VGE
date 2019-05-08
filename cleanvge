@@ -1,0 +1,270 @@
+#!/bin/env python
+#/*
+# *    Virtual Grid Engine
+# *
+# *   (c) Copyright 2017-2019 Satoshi ITO, Masaaki Yadome, and Satoru MIYANO
+# */
+
+"""
+
+Clean VGE-related process
+
+version 20170317d
+
+"""
+
+import os, argparse,signal
+
+#
+parser = argparse.ArgumentParser(description='clean running VGE process(es)')
+parser.add_argument('--verbose', action='store', nargs='?', const=1, default=1, type=int, \
+                     choices=[0,1,3], metavar=None, \
+                     help = 'select verbose output level [0:critical level, 1:infomation level(default), 3: debug level]')
+args = parser.parse_args()
+
+#
+#
+current_dir=os.getcwd() 
+home_dir = os.environ["HOME"] # $HOME
+#
+#
+#
+from mpi4py import MPI
+import sys,signal
+import datetime, commands
+import time  
+
+#
+#
+from VGE.get_process_list import *
+from VGE.check_process_status import *
+#
+#
+
+
+
+
+#
+# MPI init
+#
+comm = MPI.COMM_WORLD
+nproc = comm.Get_size()
+myrank = comm.Get_rank()
+proc_name = MPI.Get_processor_name()
+
+#
+# get process id for all nodes
+#
+
+#
+mypid=os.getpid()
+myppid=os.getppid()
+mypppid = os.popen("ps -p %d -oppid=" % os.getppid()).read().strip()
+if mypppid.isdigit():
+   mypppid = int(mypppid)
+else:
+   mypppid = -1
+#
+mypidlist =[]
+myppidlist =[]
+mypppidlist =[]
+#
+mypidlist = comm.allgather(mypid)
+myppidlist = comm.allgather(myppid)
+mypppidlist = comm.allgather(mypppid)
+#
+
+#
+# set verbose level
+#
+from logging import getLogger,StreamHandler,basicConfig,DEBUG,INFO,WARNING,ERROR,CRITICAL
+logger=getLogger(__name__)
+logger.setLevel(INFO)
+
+#
+verbose=int(args.verbose)
+#
+if verbose == 0:
+   logger.setLevel(CRITICAL)
+elif verbose == 1 or verbose ==2:
+   logger.setLevel(INFO)
+elif verbose == 3:
+   logger.setLevel(DEBUG)
+basicConfig(format='%(asctime)s:%(levelname)s:%(message)s')
+
+#
+if __name__ == '__main__':
+
+   if myrank == 0:
+      logger.info("CLEANVGE: ---------------------------------------------------")
+      logger.info("CLEANVGE: clean VGE process(es) ...")
+      logger.info("CLEANVGE: ---------------------------------------------------")
+      init_time= time.time()
+   else: 
+      pass
+   #
+   comm.barrier()
+   #
+   myname=(os.path.basename(__file__)).split(".")[0]
+   logger.debug("CLEANVGE rank[%i]: process id: pid [%i] ppid [%i] pppid[%i]" %(myrank,mypid,myppid,mypppid))
+   #
+   flag_grandparent=True
+   if mypppid == 1:
+      logger.debug("CLEANVGE rank[%i]: this grandparent pid [%i] will not be used." %(myrank,mypppid))
+      flag_grandparent=False
+
+
+   process_list =[]
+   process_list=get_process_list("linux")
+   lists=process_list.split("\n")
+   #
+   logger.debug("CLEANVGE rank[%i]: process list:[%s]" %(myrank,lists))
+   #
+
+   #
+   target_process_list=[]
+   target_process_list.append("vge")
+   target_process_list.append("vge_connect")
+   #target_process="vge"
+
+   # for K computer
+   grandparentprocess_list = []
+   grandparentprocess_list.append("mpiexec")
+   grandparentprocess_list.append("mpirapp")
+   grandparentprocess_list.append("plexec")
+
+   myprocess="cleanvge"
+   mypid = os.getpid()
+   #
+   pcount=0
+   #
+
+   # 
+   # check current process(es) to find the target...
+   #
+   for process in lists:
+       flag_found=False
+       try: 
+          for temp_process in target_process_list:
+             if temp_process in process:
+                process_list = process.split(" ")
+                for temp in process_list:
+                   temp0 = os.path.basename(temp)
+                   if temp0 == temp_process: 
+                      #
+                      flag_found = True
+                      target_process = temp_process
+                      logger.debug("CLEANVGE rank[%i]: found ... [%s]-->[%s]" %(myrank,temp_process,process))
+                      raise NameError("END")
+                      #
+       except NameError:
+          pass
+
+       #
+       if flag_found:
+             #
+             # get a process id to be killed
+             #
+             temp = process.split(" ")
+             #
+             target_process_id = -1
+             for ii in range(len(temp)):
+                 if temp[ii].isdigit():
+                      if check_process_status(int(temp[ii])):
+                           target_process_id = int(temp[ii])
+                           break # exit this loop
+             #
+             found_location = None
+             #
+             if target_process_id > 0:
+                flag=True
+                found_rank=-1
+                # search current process...
+                for pid in mypidlist:
+                   found_rank += 1
+                   if pid == target_process_id:
+                      flag=False
+                      found_process_id = pid
+                      found_location = "child"
+                      break
+                # search parent process...
+                if flag:
+                   found_rank=-1
+                   for pid in myppidlist:
+                      found_rank += 1
+                      if pid == target_process_id:
+                         flag=False
+                         found_process_id = pid
+                         found_location = "parent"
+                         break
+                # search grandparent process...
+                if flag:
+                   if flag_grandparent: 
+                      found_rank=-1
+                      for pid in mypppidlist:
+                         if pid is not 1:
+                            found_rank += 1
+                            if pid == target_process_id:
+                              flag=False
+                              found_process_id = pid
+                              found_location = "grandparent"
+                              break
+                   else: # for K-computer
+                       for grandparentprocess in grandparentprocess_list: 
+                           if grandparentprocess in process:
+                              flag=False
+                              found_rank = myrank
+                              found_process_id = target_process_id
+                              found_location = "grandparent"
+                              #
+                              logger.debug("CLEANVGE rank[%i]: found my grandparent process [%s] in this process on K-computer [%s]" \
+                                    %(myrank,grandparentprocess,process))
+                              #
+                              break
+
+
+                #
+                if flag:       
+                   try:
+                      logger.info("CLEANVGE rank[%i]: my process id is [%i]... found vge-related process to be killed... try to kill it... [%s]" %(myrank,mypid,process))
+                      os.kill(target_process_id, signal.SIGTERM) #
+                      time.sleep(0.1) # sleep 0.1 sec
+                      logger.info("CLEANVGE rank[%i]: .... process id [%i] was gone." %(myrank,target_process_id))
+                      pcount +=1
+                   except Exception, error:
+                      logger.error("CLEANVGE rank[%i]: os.kill error was occured [%s]." %(myrank,process))
+                else:
+                      if myrank != found_rank: 
+                         logger.info("CLEANVGE rank[%i]: this process [pid %i] is one of us [pid %i of rank=%i) loc:[%s] process[%s]. " \
+                                      %(myrank,target_process_id,found_process_id,found_rank,found_location,process))
+                      else:
+                         logger.debug("CLEANVGE rank[%i]: this process [pid %i] is me [pid %i of rank=%i) loc:[%s] process:[%s]. " \
+                                      %(myrank,target_process_id,found_process_id,found_rank,found_location,process))
+             else:
+                   logger.error("CLEANVGE rank[%i]: not identified the process id to be killed" %(myrank))
+
+   #
+   #
+   comm.barrier()
+   logger.info("CLEANVGE rank[%i]: num of vge-related processes killed is [%i]." %(myrank,pcount))
+   #
+   time.sleep(1)
+   #
+   if myrank == 0:
+      logger.info("CLEANVGE: finished .....")
+      logger.info("CLEANVGE: elapsed time [%0.2f sec] " %(time.time()-init_time))
+   else: 
+      pass
+   #
+   comm.barrier()
+   #
+   if myrank==0:
+      MPI.Finalize()
+      os._exit(0)
+   else:
+      MPI.Finalize()
+   #
+   #
+
+
+
