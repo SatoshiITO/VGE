@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 - ja-en translation of user_manual.
 - Develop hierarchical master-worker algorithm.
 
+## [2.0.2] - 2019-05-10
+### bugfix
+- Fix vge.cfg (tag name was wrong)
+
+
+## [2.0.1] - 2019-05-08
+### Changed
+- Add english user manual.
+### bugfix
+- Add cleanvge
+
 
 ## [2.0.0] - 2019-04-02
 ### Changed
